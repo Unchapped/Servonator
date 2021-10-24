@@ -1,18 +1,25 @@
-
 #include <Arduino.h>
 #include <servonator_hal.h>
+
+#include <Wire.h>
+#include <Adafruit_PWMServoDriver.h>
+Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
+#define SERVOMIN  120 // This is the 'minimum' pulse length count (out of 4096)
+#define SERVOMAX  460 // This is the 'maximum' pulse length count (out of 4096)
+#define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
+
 
 #include <FancyDelay.h>
 FancyDelay oneSec(1000);
 
 void setup() {
-  //Initalize DMX Library
+  //Initalize Serial Debug channel
   Serial.begin(9600);
 
   //Initialize Adafruit PWM
-  //pwm.begin();
-  //pwm.setOscillatorFrequency(27000000);
-  //pwm.setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
+  pwm.begin();
+  pwm.setOscillatorFrequency(27000000);
+  pwm.setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
 
   //Initialize discrete hardware
   Servonator.setup();
@@ -33,10 +40,14 @@ void loop() {
 
   static int power_state = HIGH;
   static int dmx_state = LOW;
+  static int servo_0_pos = SERVOMIN;
+  static int servo_15_pos = SERVOMAX;
 
   if(oneSec.ready()){
     power_state = HIGH - power_state;
     dmx_state = HIGH - dmx_state;
+    servo_0_pos = SERVOMAX - servo_0_pos + SERVOMIN;
+    servo_15_pos = SERVOMAX - servo_15_pos + SERVOMIN;
   }
 
   Serial.print("  LED states: Power: ");
@@ -47,8 +58,15 @@ void loop() {
   Serial.print(dmx_state);
   digitalWrite(Servonator.dmx_led, dmx_state);
 
-  //TODO: PWM checkouts
-  
+  Serial.print("  Servo Channels: 0: ");
+  Serial.print(servo_0_pos);
+  pwm.setPWM(0, 0, servo_0_pos);
+
+  Serial.print(",  16: ");
+  Serial.print(dmx_state);
+  Serial.print(servo_15_pos);
+  pwm.setPWM(15, 0, servo_15_pos);
+
   Serial.flush(); //wait for Serial to complete transmission
 }
 
