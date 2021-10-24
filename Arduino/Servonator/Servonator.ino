@@ -79,12 +79,7 @@ void loop() {
     }
   } else { //timeout, Manual Controls! */
     digitalWrite(DMX_LED, LOW);
-    for(int channel = 0; channel < 4; channel++) {
-      int value = analogRead(pots[channel].pin);
-      if(pots[channel].inverted) value = 1023 - value;
-      value = map(value, 0, 1023, SERVOMIN, SERVOMAX);
-      pwm.setPWM(channel, 0, map(value, 0, 1023, SERVOMIN, SERVOMAX));
-    }
+    for(int channel = 0; channel < 4; channel++) pwm.setPWM(channel, 0, map(read_potentiometer(channel), 0, 1023, SERVOMIN, SERVOMAX));
   }
 }
 
