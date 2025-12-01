@@ -16,7 +16,6 @@ uint16_t read_dmx_offset(){
   return ((~PIND & PORTD_BITMASK) << 2); //read the setting
   // PORTD &= ~PORTD_BITMASK; //MEH: disable pullups to save power
 }
-uint16_t dmxOffset = 0;
 
 //Pin D11/PB3 - DMX LED
 //Pin D12/PB4 - Power LED
@@ -66,30 +65,34 @@ void setup() {
   //analogRead configures analog pins, no initialization required for A0-A7
 }
 
+//DMX Mode loop function()
+void dmx_loop() {
+  uint16_t dmx_offset = read_dmx_offset();
+  unsigned long last_packet = DMXSerial.noDataSince();
+  if(last_packet > 50) { //timeout
+    digitalWrite(DMX_LED, (last_packet >> 7) & 1); //128ms blink period ~=10 Hz
+    return;
+  }
+
+  digitalWrite(DMX_LED, HIGH);
+  if(DMXSerial.dataUpdated()) {
+    for(int channel = 0; channel < 16; channel++)
+      pwm.setPWM(channel, 0, map(DMXSerial.read(dmx_offset + channel + 1), 0, 255, SERVOMIN, SERVOMAX));
+    DMXSerial.resetUpdated();
+  }
+}
+
+void manual_loop() {
+  digitalWrite(DMX_LED, LOW);
+  for(int channel = 0; channel < NUM_POTS; channel++)
+    pwm.setPWM(channel, 0, map(analogRead(POT_PINS[channel]), 0, 1023, SERVOMIN, SERVOMAX));
+}
 
 void loop() {
-  dmxOffset = read_dmx_offset();
-  dmx_mode_select = digitalRead(DMX_MODE_IN); //Read DMX Mode select switch
-  digitalWrite(DMX_MODE_OUT, dmx_mode_select); //Set Reciever enabled/disabled
-
-  if (dmx_mode_select == 0) {
-    if(DMXSerial.noDataSince() < 50){
-      digitalWrite(DMX_LED, HIGH);
-    }else{
-      digitalWrite(DMX_LED, LOW); //indicate timeout!
-    }
-    
-    if(DMXSerial.dataUpdated()) {
-      for(int channel = 0; channel < 16; channel++)
-        pwm.setPWM(channel, 0, map(DMXSerial.read(dmxOffset + channel + 1), 0, 255, SERVOMIN, SERVOMAX));
-      DMXSerial.resetUpdated();
-    }
-
-  } else { //dmx_mode_select == 1; manual mode enabled
-    digitalWrite(DMX_LED, LOW);
-    for(int channel = 0; channel < NUM_POTS; channel++)
-      pwm.setPWM(channel, 0, map(analogRead(POT_PINS[channel]), 0, 1023, SERVOMIN, SERVOMAX));
-  }
+  if (!digitalRead(DMX_MODE_IN)) //DMX Mode (Active Low)
+    dmx_loop();
+  else
+    manual_loop();
 }
 
   
