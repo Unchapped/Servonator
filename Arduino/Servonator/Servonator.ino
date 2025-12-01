@@ -23,6 +23,12 @@ uint16_t dmxOffset = 0;
 #define DMX_LED 11
 #define PWR_LED 12
 
+//Pin D10/PB2 - DMX Shield Enable (Active Low)
+//Pin D9/PB1 - DMX Mode Switch (Active Low)
+#define DMX_MODE_OUT 10
+#define DMX_MODE_IN 9
+uint8_t dmx_mode_select = 1; // 1 = Manual Mode
+
 //Analog In Channels
 //A0-A3 - Potentiometer Axes 1-4
 //A4/A5 - (I2C Bus)
@@ -37,6 +43,12 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 
 void setup() {
+  //Enable/Disable DMX Shield based on switch state
+  //TODO: DOING THIS IN SOFTWARE BREAKS NANO FLASHING! NEED TO MAKE THIS A PHYSICAL SPLICE!
+  dmx_mode_select = digitalRead(DMX_MODE_IN);
+  pinMode(DMX_MODE_OUT, OUTPUT);
+  digitalWrite(DMX_MODE_OUT, dmx_mode_select); // set high by default to disable
+
   //Initalize DMX Library
   DMXSerial.init(DMXReceiver);
 
@@ -57,16 +69,23 @@ void setup() {
 
 void loop() {
   dmxOffset = read_dmx_offset();
+  dmx_mode_select = digitalRead(DMX_MODE_IN); //Read DMX Mode select switch
+  digitalWrite(DMX_MODE_OUT, dmx_mode_select); //Set Reciever enabled/disabled
 
-  if (DMXSerial.noDataSince() < 50){
-    digitalWrite(DMX_LED, HIGH);
+  if (dmx_mode_select == 0) {
+    if(DMXSerial.noDataSince() < 50){
+      digitalWrite(DMX_LED, HIGH);
+    }else{
+      digitalWrite(DMX_LED, LOW); //indicate timeout!
+    }
     
     if(DMXSerial.dataUpdated()) {
       for(int channel = 0; channel < 16; channel++)
         pwm.setPWM(channel, 0, map(DMXSerial.read(dmxOffset + channel + 1), 0, 255, SERVOMIN, SERVOMAX));
       DMXSerial.resetUpdated();
     }
-  } else { //timeout, Manual Controls! */
+
+  } else { //dmx_mode_select == 1; manual mode enabled
     digitalWrite(DMX_LED, LOW);
     for(int channel = 0; channel < NUM_POTS; channel++)
       pwm.setPWM(channel, 0, map(analogRead(POT_PINS[channel]), 0, 1023, SERVOMIN, SERVOMAX));
