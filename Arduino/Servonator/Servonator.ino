@@ -22,11 +22,8 @@ uint16_t read_dmx_offset(){
 #define DMX_LED 11
 #define PWR_LED 12
 
-//Pin D10/PB2 - DMX Shield Enable (Active Low)
-//Pin D9/PB1 - DMX Mode Switch (Active Low)
-#define DMX_MODE_OUT 10
-#define DMX_MODE_IN 9
-uint8_t dmx_mode_select = 1; // 1 = Manual Mode
+//Pin D10/PB2 - DMX Mode Switch (Active Low)
+#define DMX_MODE_IN 10
 
 //Analog In Channels
 //A0-A3 - Potentiometer Axes 1-4
@@ -42,12 +39,6 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 
 void setup() {
-  //Enable/Disable DMX Shield based on switch state
-  //TODO: DOING THIS IN SOFTWARE BREAKS NANO FLASHING! NEED TO MAKE THIS A PHYSICAL SPLICE!
-  dmx_mode_select = digitalRead(DMX_MODE_IN);
-  pinMode(DMX_MODE_OUT, OUTPUT);
-  digitalWrite(DMX_MODE_OUT, dmx_mode_select); // set high by default to disable
-
   //Initalize DMX Library
   DMXSerial.init(DMXReceiver);
 
