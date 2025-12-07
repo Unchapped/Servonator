@@ -42,13 +42,11 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 // This work is licensed under a BSD style license. See http://www.mathertel.de/License.aspx
 
 // State of receiving DMX Bytes
-typedef enum {
-  IDLE = 1, // wait for a BREAK condition.
-  BREAK = 2, // BREAK was detected.
-  DATA = 3, // DMX data.
-} __attribute__((packed)) DMXReceivingState;
-
-uint8_t dmxRecvState; // Current State of receiving DMX Bytes
+#define DMX_RECV_IDLE 0
+#define DMX_RECV_BREAK 1
+#define DMX_RECV_DATA 2
+#define dmxRecvState GPIOR1
+// uint8_t dmxRecvState; // Current State of receiving DMX Bytes
 
 #define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
 
@@ -74,31 +72,31 @@ ISR(USART_RX_vect)
   uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
   uint8_t data = UDR0; // get data
   if (frameerror) { // break condition detected.
-    dmxRecvState = BREAK;
+    dmxRecvState = DMX_RECV_BREAK;
     return;
   }
   uint8_t DmxState = dmxRecvState; //just load once from SRAM to increase speed
   switch(DmxState) {
-    case BREAK: // first byte after a break was read.
+    case DMX_RECV_BREAK: // first byte after a break was read.
       if (data != 0) { // RDM or customer DMX commands are not implemented
-        dmxRecvState = IDLE;
+        dmxRecvState = DMX_RECV_IDLE;
         break;
       }
-      dmxRecvState = DATA;
+      dmxRecvState = DMX_RECV_DATA;
       dmxCurrChannel = 0;
       dmxLastPacket = millis();
       break;
-    case DATA:
+    case DMX_RECV_DATA:
       // check for new data
       if (dmxCurrChannel >= DMXSERIAL_MAX) { //all 512 bytes recieved
-        dmxRecvState = IDLE;
+        dmxRecvState = DMX_RECV_IDLE;
         break;
       }
       if (dmxCurrChannel >= 16) break; //TODO: calculate and apply channels offset 
       dmxUpdated = (dmxData[dmxCurrChannel] != data);
       dmxData[dmxCurrChannel++] = data;
       break;
-    case IDLE:
+    case DMX_RECV_IDLE:
     default:
       break;
   } //state switch
@@ -109,7 +107,7 @@ void setup() {
   {
     // initialize global variables
     dmxCurrChannel = 0;
-    dmxRecvState = IDLE; // initial state
+    dmxRecvState = DMX_RECV_IDLE; // initial state
     dmxLastPacket = millis(); // remember current (relative) time in msecs.
 
     // initialize the DMX buffer
