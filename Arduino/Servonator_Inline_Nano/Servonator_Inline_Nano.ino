@@ -74,46 +74,43 @@ ISR(USARTn_RX_vect)
 {
   uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
   uint8_t data = UDR0; // get data
-  // void _DMXReceived(uint8_t data, uint8_t frameerror)
-  { 
-    uint8_t DmxState = _dmxRecvState; //just load once from SRAM to increase speed
 
-    if (DmxState == STARTUP) {
-      // just ignore any first frame comming in
-      _dmxRecvState = IDLE;
-      return;
-    }
+  uint8_t DmxState = _dmxRecvState; //just load once from SRAM to increase speed
+  if (DmxState == STARTUP) { //TODO: I think we can just remove this and start in IDLE
+    // just ignore any first frame coming in
+    _dmxRecvState = IDLE;
+    return;
+  }
 
-    if (frameerror) { //check for break
-      // break condition detected.
-      _dmxRecvState = BREAK;
-      _dmxDataPtr = _dmxData;
+  if (frameerror) { //check for break
+    // break condition detected.
+    _dmxRecvState = BREAK;
+    _dmxDataPtr = _dmxData;
 
-    } else if (DmxState == BREAK) {
-      // first byte after a break was read.
-      if (data == 0) {
-        // normal DMX start code (0) detected
-        _dmxRecvState = DATA;
-        _dmxLastPacket = millis(); // remember current (relative) time in msecs.
-        _dmxDataPtr++; // start saving data with channel # 1
+  } else if (DmxState == BREAK) {
+    // first byte after a break was read.
+    if (data == 0) {
+      // normal DMX start code (0) detected
+      _dmxRecvState = DATA;
+      _dmxLastPacket = millis(); // remember current (relative) time in msecs.
+      _dmxDataPtr++; // start saving data with channel # 1
 
-      } else {
-        // This might be a RDM or customer DMX command -> not implemented so wait for next BREAK !
-        _dmxRecvState = DONE;
-      } // if
-
-    } else if (DmxState == DATA) {
-      // check for new data
-      if (*_dmxDataPtr != data) {
-        _dmxUpdated = true;
-        // store received data into dmx data buffer.
-        *_dmxDataPtr = data;
-      } // if
-      _dmxDataPtr++;
-      if (_dmxDataPtr > _dmxDataLastPtr) _dmxRecvState = DONE; // all channels received.
+    } else {
+      // This might be a RDM or customer DMX command -> not implemented so wait for next BREAK !
+      _dmxRecvState = DONE;
     } // if
-    if (_dmxRecvState == DONE) _dmxRecvState = IDLE; // wait for next break
-  } // _DMXReceived(rxdata, rxferr);
+
+  } else if (DmxState == DATA) {
+    // check for new data
+    if (*_dmxDataPtr != data) {
+      _dmxUpdated = true;
+      // store received data into dmx data buffer.
+      *_dmxDataPtr = data;
+    } // if
+    _dmxDataPtr++;
+    if (_dmxDataPtr > _dmxDataLastPtr) _dmxRecvState = DONE; // all channels received.
+  } // if
+  if (_dmxRecvState == DONE) _dmxRecvState = IDLE; // wait for next break
 } // ISR(USARTn_RX_vect)
 
 
