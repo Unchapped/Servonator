@@ -43,11 +43,9 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 // State of receiving DMX Bytes
 typedef enum {
-  STARTUP = 1, // wait for any interrupt BEFORE starting analyzing the DMX protocoll.
-  IDLE = 2, // wait for a BREAK condition.
-  BREAK = 3, // BREAK was detected.
-  DATA = 4, // DMX data.
-  DONE = 5 // All channels received.
+  IDLE = 1, // wait for a BREAK condition.
+  BREAK = 2, // BREAK was detected.
+  DATA = 3, // DMX data.
 } __attribute__((packed)) DMXReceivingState;
 
 uint8_t _dmxRecvState; // Current State of receiving DMX Bytes
@@ -72,13 +70,6 @@ uint8_t *_dmxDataLastPtr; // This pointer will point to the last byte in _dmxDat
 void _DMXReceived(uint8_t data, uint8_t frameerror)
 {
   uint8_t DmxState = _dmxRecvState; //just load once from SRAM to increase speed
-
-  if (DmxState == STARTUP) {
-    // just ignore any first frame comming in
-    _dmxRecvState = IDLE;
-    return;
-  }
-
   if (frameerror) { //check for break
     // break condition detected.
     _dmxRecvState = BREAK;
@@ -94,7 +85,7 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
 
     } else {
       // This might be a RDM or customer DMX command -> not implemented so wait for next BREAK !
-      _dmxRecvState = DONE;
+      _dmxRecvState = IDLE;
     } // if
 
   } else if (DmxState == DATA) {
@@ -126,7 +117,7 @@ void setup() {
   {
     // initialize global variables
     _dmxDataPtr = _dmxData;
-    _dmxRecvState = STARTUP; // initial state
+    _dmxRecvState = IDLE; // initial state
     _dmxLastPacket = millis(); // remember current (relative) time in msecs.
     _dmxDataLastPtr = _dmxData + DMXSERIAL_MAX;
 
