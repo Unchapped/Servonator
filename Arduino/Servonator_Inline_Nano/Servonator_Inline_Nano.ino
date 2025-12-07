@@ -55,7 +55,6 @@ uint8_t _dmxRecvState; // Current State of receiving DMX Bytes
 #define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
 
 #define DMXSPEED 250000L
-#define DMXREADFORMAT SERIAL_8N1
 // It implements rounding of ((clock / 16) / baud) - 1.
 #define CalcPreScale(B) (((((F_CPU) / 8) / (B)) - 1) / 2)
 const int32_t _DMX_dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
@@ -115,18 +114,12 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
 } // _DMXReceived()
 
 // This Interrupt Service Routine is called when a byte or frame error was received.
-ISR(USARTn_RX_vect)
+ISR(USART_RX_vect)
 {
   uint8_t rxferr = (UCSR0A & (1 << FE0)); // get state before data!
   uint8_t rxdata = UDR0; // get data
   _DMXReceived(rxdata, rxferr);
 } // ISR(USARTn_RX_vect)
-
-// Interrupt service routines that are called when the actual byte was sent.
-ISR(USARTn_TX_vect) {} // ISR(USARTn_TX_vect)
-
-// this interrupt occurs after data register was emptied by handing it over to the shift register.
-ISR(USARTn_UDRE_vect) {} // ISR(USARTn_UDRE_vect)
 
 void setup() {
   //Initalize DMX Library
@@ -145,11 +138,12 @@ void setup() {
     UCSR0A = 0; // void _DMX_init()
     UBRR0H = _DMX_dmxPreScale >> 8;
     UBRR0L = _DMX_dmxPreScale;
-    UCSR0C = DMXREADFORMAT; // accept data packets after first stop bit
+    UCSR0C = SERIAL_8N1; // accept data packets after first stop bit
     UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
 
     //Flush the UART Hardware Buffer
-    while (UCSR0A & (1 << RXC0)) uint8_t voiddata = UDR0;
+    uint8_t voiddata;
+    while (UCSR0A & (1 << RXC0)) voiddata = UDR0; // get data
   }
 
   //Initialize Adafruit PWM
