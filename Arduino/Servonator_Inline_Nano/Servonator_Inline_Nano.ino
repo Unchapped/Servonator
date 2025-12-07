@@ -66,9 +66,11 @@ uint8_t _dmxData[DMXSERIAL_MAX + 1];
 uint8_t *_dmxDataPtr; // This pointer will point to the next byte in _dmxData;
 uint8_t *_dmxDataLastPtr; // This pointer will point to the last byte in _dmxData;
 
-
-void _DMXReceived(uint8_t data, uint8_t frameerror)
+// This Interrupt Service Routine is called when a byte or frame error was received.
+ISR(USART_RX_vect)
 {
+  uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
+  uint8_t data = UDR0; // get data
   uint8_t DmxState = _dmxRecvState; //just load once from SRAM to increase speed
   if (frameerror) { //check for break
     // break condition detected.
@@ -102,14 +104,6 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
       _dmxRecvState = IDLE; // wait for next break
     } // if
   } // if
-} // _DMXReceived()
-
-// This Interrupt Service Routine is called when a byte or frame error was received.
-ISR(USART_RX_vect)
-{
-  uint8_t rxferr = (UCSR0A & (1 << FE0)); // get state before data!
-  uint8_t rxdata = UDR0; // get data
-  _DMXReceived(rxdata, rxferr);
 } // ISR(USARTn_RX_vect)
 
 void setup() {
