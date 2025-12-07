@@ -36,19 +36,29 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
 
-// ----- DMXSerial Private variables -----
-// Copied from DMXSerial - A Arduino library for sending and receiving DMX using the builtin serial hardware port.
-// Copyright (c) 2011-2014 by Matthias Hertel, http://www.mathertel.de
-// This work is licensed under a BSD style license. See http://www.mathertel.de/License.aspx
-
+// Using GPIOR1 for DMX reciving State
+// Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG]
+#define DMX_STATE_REG GPIOR1
 // State of receiving DMX Bytes
+
 #define DMX_RECV_MASK  0xC0
 #define DMX_RECV_IDLE 0x00
 #define DMX_RECV_BREAK 0x40
 #define DMX_RECV_DATA 0x80
-#define DMX_STATE_REG GPIOR1
 #define getDMXState (DMX_STATE_REG & DMX_RECV_MASK)
 #define setDMXState(STATE) DMX_STATE_REG = (DMX_STATE_REG & ~DMX_RECV_MASK) | STATE
+
+// bool dmxUpdated = true; // is set to true when new data arrived.
+#define DMX_UPDATE_FLAG 0x20
+#define getDMXUpdateFlag (DMX_STATE_REG & DMX_UPDATE_FLAG)
+#define setDMXUpdateFlag DMX_STATE_REG |= DMX_UPDATE_FLAG
+#define clearDMXUpdateFlag DMX_STATE_REG &= ~DMX_UPDATE_FLAG
+
+
+// ----- DMXSerial Private variables -----
+// Copied from DMXSerial - A Arduino library for sending and receiving DMX using the builtin serial hardware port.
+// Copyright (c) 2011-2014 by Matthias Hertel, http://www.mathertel.de
+// This work is licensed under a BSD style license. See http://www.mathertel.de/License.aspx
 
 #define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
 
@@ -58,7 +68,7 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 const int32_t dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
 
 volatile unsigned long dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
-bool dmxUpdated = true; // is set to true when new data arrived.
+
 
 // Array of DMX values (raw).
 // Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
@@ -91,7 +101,7 @@ ISR(USART_RX_vect)
         break;
       }
       if (dmxCurrChannel >= 16) break; //TODO: calculate and apply channels offset 
-      dmxUpdated = (dmxData[dmxCurrChannel] != data);
+      if(dmxData[dmxCurrChannel] != data) setDMXUpdateFlag;
       dmxData[dmxCurrChannel++] = data;
       break;
     case DMX_RECV_IDLE:
@@ -149,11 +159,11 @@ void dmx_loop() {
   }
 
   digitalWrite(DMX_LED, HIGH);
-  if(dmxUpdated) { // DMXSerial.dataUpdated()) {
+  if(getDMXUpdateFlag) { // DMXSerial.dataUpdated()) {
     for(int channel = 0; channel < 16; channel++) {
         pwm.setPWM(channel, 0, map(dmxData[channel], 0, 255, SERVOMIN, SERVOMAX));
       }
-    dmxUpdated = false; //DMXSerial.resetUpdated();
+    clearDMXUpdateFlag;
   }
 }
 
