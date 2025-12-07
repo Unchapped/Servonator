@@ -36,23 +36,30 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
 
-// Using GPIOR1 for DMX reciving State
-// Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG]
-#define DMX_STATE_REG GPIOR1
-// State of receiving DMX Bytes
+// Using GPIOR0 for DMX channel counter (0-15 only)
+#define DMX_CHANNEL_REG GPIOR0
+#define DMX_CHANNEL_MASK  0x0F
 
+// Array of DMX values (raw).
+// Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
+uint8_t dmxData[16]; //[DMXSERIAL_MAX + 1];
+uint16_t dmxCurrChannel; // This pointer will point to the next byte in dmxData;
+
+// Using GPIOR1 for DMX reciving State
+// Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG, DMX OFFSET(5 bits), ]
+#define DMX_STATE_REG GPIOR1
+
+//DMX Recieve State
 #define DMX_RECV_MASK  0xC0
 #define DMX_RECV_IDLE 0x00
 #define DMX_RECV_BREAK 0x40
 #define DMX_RECV_DATA 0x80
-#define getDMXState (DMX_STATE_REG & DMX_RECV_MASK)
+//#define getDMXState (DMX_STATE_REG & DMX_RECV_MASK)
 #define setDMXState(STATE) DMX_STATE_REG = (DMX_STATE_REG & ~DMX_RECV_MASK) | STATE
 
-// bool dmxUpdated = true; // is set to true when new data arrived.
 #define DMX_UPDATE_FLAG 0x20
-#define getDMXUpdateFlag (DMX_STATE_REG & DMX_UPDATE_FLAG)
-#define setDMXUpdateFlag DMX_STATE_REG |= DMX_UPDATE_FLAG
-#define clearDMXUpdateFlag DMX_STATE_REG &= ~DMX_UPDATE_FLAG
+
+#define DMX_OFFSET_MASK  0x1F
 
 
 // ----- DMXSerial Private variables -----
@@ -70,10 +77,7 @@ const int32_t dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for 
 volatile unsigned long dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
 
 
-// Array of DMX values (raw).
-// Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
-uint8_t dmxData[16]; //[DMXSERIAL_MAX + 1];
-uint16_t dmxCurrChannel; // This pointer will point to the next byte in dmxData;
+
 
 // This Interrupt Service Routine is called when a byte or frame error was received.
 ISR(USART_RX_vect)
@@ -84,7 +88,7 @@ ISR(USART_RX_vect)
     setDMXState(DMX_RECV_BREAK);
     return;
   }
-  switch(getDMXState) {
+  switch(DMX_STATE_REG & DMX_RECV_MASK) {
     case DMX_RECV_BREAK: // first byte after a break was read.
       if (data != 0) { // RDM or customer DMX commands are not implemented
         setDMXState(DMX_RECV_IDLE);
@@ -101,7 +105,8 @@ ISR(USART_RX_vect)
         break;
       }
       if (dmxCurrChannel >= 16) break; //TODO: calculate and apply channels offset 
-      if(dmxData[dmxCurrChannel] != data) setDMXUpdateFlag;
+      if(dmxData[dmxCurrChannel] != data) 
+        DMX_STATE_REG |= DMX_UPDATE_FLAG; //set DMX Update flag
       dmxData[dmxCurrChannel++] = data;
       break;
     case DMX_RECV_IDLE:
@@ -159,11 +164,11 @@ void dmx_loop() {
   }
 
   digitalWrite(DMX_LED, HIGH);
-  if(getDMXUpdateFlag) { // DMXSerial.dataUpdated()) {
+  if(DMX_STATE_REG & DMX_UPDATE_FLAG) {
     for(int channel = 0; channel < 16; channel++) {
         pwm.setPWM(channel, 0, map(dmxData[channel], 0, 255, SERVOMIN, SERVOMAX));
       }
-    clearDMXUpdateFlag;
+    DMX_STATE_REG &= ~DMX_UPDATE_FLAG; //clear DMX Update Flag
   }
 }
 
