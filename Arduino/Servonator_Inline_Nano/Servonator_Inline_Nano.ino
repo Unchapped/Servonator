@@ -8,7 +8,7 @@
 //Pins D2-D7 5-pin DMX address offset (16 channel chunks)
 //Pin D7 - additional DIP switch channel (unused)
 #define PORTD_BITMASK B01111100
-uint16_t read_dmx_offset(){
+uint16_t readdmx_offset(){
   DDRD &= ~PORTD_BITMASK; //All inputs, we'll initialize the serial port later.
   PORTD = PORTD_BITMASK; //enable pullups
   return ((~PIND & PORTD_BITMASK) << 2); //read the setting
@@ -48,81 +48,78 @@ typedef enum {
   DATA = 3, // DMX data.
 } __attribute__((packed)) DMXReceivingState;
 
-uint8_t _dmxRecvState; // Current State of receiving DMX Bytes
+uint8_t dmxRecvState; // Current State of receiving DMX Bytes
 
 #define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
 
 #define DMXSPEED 250000L
 // It implements rounding of ((clock / 16) / baud) - 1.
 #define CalcPreScale(B) (((((F_CPU) / 8) / (B)) - 1) / 2)
-const int32_t _DMX_dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
+const int32_t dmxdmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
 
-volatile unsigned long _dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
-bool _dmxUpdated = true; // is set to true when new data arrived.
+volatile unsigned long dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
+bool dmxUpdated = true; // is set to true when new data arrived.
 
 // Array of DMX values (raw).
 // Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
-uint8_t _dmxData[DMXSERIAL_MAX + 1];
-uint8_t *_dmxDataPtr; // This pointer will point to the next byte in _dmxData;
-uint8_t *_dmxDataLastPtr; // This pointer will point to the last byte in _dmxData;
+uint8_t dmxData[16]; //[DMXSERIAL_MAX + 1];
+uint16_t dmxCurrChannel; // This pointer will point to the next byte in dmxData;
+
+// uint8_t *dmxDataPtr; // This pointer will point to the next byte in dmxData;
+// uint8_t *dmxDataLastPtr; // This pointer will point to the last byte in dmxData;
 
 // This Interrupt Service Routine is called when a byte or frame error was received.
 ISR(USART_RX_vect)
 {
   uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
   uint8_t data = UDR0; // get data
-  uint8_t DmxState = _dmxRecvState; //just load once from SRAM to increase speed
-  if (frameerror) { //check for break
-    // break condition detected.
-    _dmxRecvState = BREAK;
-    _dmxDataPtr = _dmxData;
-
-  } else if (DmxState == BREAK) {
-    // first byte after a break was read.
-    if (data == 0) {
-      // normal DMX start code (0) detected
-      _dmxRecvState = DATA;
-      _dmxLastPacket = millis(); // remember current (relative) time in msecs.
-      _dmxDataPtr++; // start saving data with channel # 1
-
-    } else {
-      // This might be a RDM or customer DMX command -> not implemented so wait for next BREAK !
-      _dmxRecvState = IDLE;
-    } // if
-
-  } else if (DmxState == DATA) {
-    // check for new data
-    if (*_dmxDataPtr != data) {
-      _dmxUpdated = true;
-      // store received data into dmx data buffer.
-      *_dmxDataPtr = data;
-    } // if
-    _dmxDataPtr++;
-
-    if (_dmxDataPtr > _dmxDataLastPtr) {
-      // all channels received.
-      _dmxRecvState = IDLE; // wait for next break
-    } // if
-  } // if
+  if (frameerror) { // break condition detected.
+    dmxRecvState = BREAK;
+    return;
+  }
+  uint8_t DmxState = dmxRecvState; //just load once from SRAM to increase speed
+  switch(DmxState) {
+    case BREAK: // first byte after a break was read.
+      if (data != 0) { // RDM or customer DMX commands are not implemented
+        dmxRecvState = IDLE;
+        break;
+      }
+      dmxRecvState = DATA;
+      dmxCurrChannel = 0;
+      dmxLastPacket = millis();
+      break;
+    case DATA:
+      // check for new data
+      if (dmxCurrChannel >= DMXSERIAL_MAX) { //all 512 bytes recieved
+        dmxRecvState = IDLE;
+        break;
+      }
+      if (dmxCurrChannel >= 16) break; //TODO: calculate and apply channels offset 
+      dmxUpdated = (dmxData[dmxCurrChannel] != data);
+      dmxData[dmxCurrChannel++] = data;
+      break;
+    case IDLE:
+    default:
+      break;
+  } //state switch
 } // ISR(USARTn_RX_vect)
 
 void setup() {
   //Initalize DMX Library
   {
     // initialize global variables
-    _dmxDataPtr = _dmxData;
-    _dmxRecvState = IDLE; // initial state
-    _dmxLastPacket = millis(); // remember current (relative) time in msecs.
-    _dmxDataLastPtr = _dmxData + DMXSERIAL_MAX;
+    dmxCurrChannel = 0;
+    dmxRecvState = IDLE; // initial state
+    dmxLastPacket = millis(); // remember current (relative) time in msecs.
 
     // initialize the DMX buffer
-    for (int n = 0; n < DMXSERIAL_MAX + 1; n++)
-      _dmxData[n] = 0;
+    for (int n = 0; n < 16; n++)
+      dmxData[n] = 0;
 
     //Setup UART hardware for recieving (Atmega328p UART0)
-    UCSR0A = 0; // void _DMX_init()
-    UBRR0H = _DMX_dmxPreScale >> 8;
-    UBRR0L = _DMX_dmxPreScale;
+    UCSR0A = 0; // void dmx_init()
+    UBRR0H = dmxdmxPreScale >> 8;
+    UBRR0L = dmxdmxPreScale;
     UCSR0C = SERIAL_8N1; // accept data packets after first stop bit
     UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
 
@@ -147,8 +144,8 @@ void setup() {
 
 //DMX Mode loop function()
 void dmx_loop() {
-  uint16_t dmx_offset = read_dmx_offset();
-  unsigned long last_packet = millis() - _dmxLastPacket; //DMXSerialClass::noDataSince()
+  uint16_t dmx_offset = readdmx_offset();
+  unsigned long last_packet = millis() - dmxLastPacket; //DMXSerialClass::noDataSince()
 
   if(last_packet > 50) { //timeout
     digitalWrite(DMX_LED, (last_packet >> 7) & 1); //128ms blink period ~=10 Hz
@@ -156,12 +153,11 @@ void dmx_loop() {
   }
 
   digitalWrite(DMX_LED, HIGH);
-  if(_dmxUpdated) { // DMXSerial.dataUpdated()) {
+  if(dmxUpdated) { // DMXSerial.dataUpdated()) {
     for(int channel = 0; channel < 16; channel++) {
-        uint8_t dmx_channel = _dmxData[dmx_offset + channel + 1]; // DMXSerial.read(dmx_offset + channel + 1)
-        pwm.setPWM(channel, 0, map(dmx_channel, 0, 255, SERVOMIN, SERVOMAX));
+        pwm.setPWM(channel, 0, map(dmxData[channel], 0, 255, SERVOMIN, SERVOMAX));
       }
-    _dmxUpdated = false; //DMXSerial.resetUpdated();
+    dmxUpdated = false; //DMXSerial.resetUpdated();
   }
 }
 
