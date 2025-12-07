@@ -119,7 +119,6 @@ ISR(USARTn_RX_vect)
 
 void setup() {
   //Initalize DMX Library
-  // void DMXSerialClass::init(int mode, int dmxModePin)
   {
     // initialize global variables
     _dmxDataPtr = _dmxData;
@@ -131,28 +130,16 @@ void setup() {
     for (int n = 0; n < DMXSERIAL_MAX + 1; n++)
       _dmxData[n] = 0;
 
+    //Setup UART hardware for recieving (Atmega328p UART0)
     UCSR0A = 0; // void _DMX_init()
+    UBRR0H = _DMX_dmxPreScale >> 8;
+    UBRR0L = _DMX_dmxPreScale;
+    UCSR0B = (1 << RXEN0) | (1 << RXCIE0);
+    UCSR0C = DMXREADFORMAT; // accept data packets after first stop bit
 
-    // void _DMXStartReceiving()
-    {
-      // _DMX_setMode(DMXUARTMode::RDATA);
-      {
-      UBRR0H = _DMX_dmxPreScale >> 8;
-      UBRR0L = _DMX_dmxPreScale;
-      UCSR0B = (1 << RXEN0) | (1 << RXCIE0);
-      UCSR0C = DMXREADFORMAT; // accept data packets after first stop bit
-      } //_DMX_setMode(DMXUARTMode::RDATA)
-
-      // flush all incomming data packets in the queue
-      // void _DMX_flush()
-      {
-        uint8_t voiddata;
-        while (UCSR0A & (1 << RXC0)) {
-          voiddata = UDR0; // get data
-        }
-      } // _DMX_flush()
-    } // _DMXStartReceiving()
-  } // DMXSerial.init()
+    //Flush the UART Hardware Buffer
+    while (UCSR0A & (1 << RXC0)) uint8_t voiddata = UDR0;
+  }
 
   //Initialize Adafruit PWM
   pwm.begin();
