@@ -55,7 +55,7 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 #define DMXSPEED 250000L
 // It implements rounding of ((clock / 16) / baud) - 1.
 #define CalcPreScale(B) (((((F_CPU) / 8) / (B)) - 1) / 2)
-const int32_t dmxdmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
+const int32_t dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
 
 volatile unsigned long dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
 bool dmxUpdated = true; // is set to true when new data arrived.
@@ -117,8 +117,8 @@ void setup() {
 
     //Setup UART hardware for recieving (Atmega328p UART0)
     UCSR0A = 0; // void dmx_init()
-    UBRR0H = dmxdmxPreScale >> 8;
-    UBRR0L = dmxdmxPreScale;
+    UBRR0H = dmxPreScale >> 8;
+    UBRR0L = dmxPreScale;
     UCSR0C = SERIAL_8N1; // accept data packets after first stop bit
     UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
 
