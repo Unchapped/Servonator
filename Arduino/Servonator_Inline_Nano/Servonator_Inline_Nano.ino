@@ -42,11 +42,13 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 // This work is licensed under a BSD style license. See http://www.mathertel.de/License.aspx
 
 // State of receiving DMX Bytes
-#define DMX_RECV_IDLE 0
-#define DMX_RECV_BREAK 1
-#define DMX_RECV_DATA 2
-#define dmxRecvState GPIOR1
-// uint8_t dmxRecvState; // Current State of receiving DMX Bytes
+#define DMX_RECV_MASK  0xC0
+#define DMX_RECV_IDLE 0x00
+#define DMX_RECV_BREAK 0x40
+#define DMX_RECV_DATA 0x80
+#define DMX_STATE_REG GPIOR1
+#define getDMXState DMX_STATE_REG
+#define setDMXState(STATE) DMX_STATE_REG = STATE
 
 #define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
 
@@ -72,24 +74,23 @@ ISR(USART_RX_vect)
   uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
   uint8_t data = UDR0; // get data
   if (frameerror) { // break condition detected.
-    dmxRecvState = DMX_RECV_BREAK;
+    setDMXState(DMX_RECV_BREAK);
     return;
   }
-  uint8_t DmxState = dmxRecvState; //just load once from SRAM to increase speed
-  switch(DmxState) {
+  switch(getDMXState) {
     case DMX_RECV_BREAK: // first byte after a break was read.
       if (data != 0) { // RDM or customer DMX commands are not implemented
-        dmxRecvState = DMX_RECV_IDLE;
+        setDMXState(DMX_RECV_IDLE);
         break;
       }
-      dmxRecvState = DMX_RECV_DATA;
+      setDMXState(DMX_RECV_DATA);
       dmxCurrChannel = 0;
       dmxLastPacket = millis();
       break;
     case DMX_RECV_DATA:
       // check for new data
       if (dmxCurrChannel >= DMXSERIAL_MAX) { //all 512 bytes recieved
-        dmxRecvState = DMX_RECV_IDLE;
+        setDMXState(DMX_RECV_IDLE);
         break;
       }
       if (dmxCurrChannel >= 16) break; //TODO: calculate and apply channels offset 
@@ -107,7 +108,7 @@ void setup() {
   {
     // initialize global variables
     dmxCurrChannel = 0;
-    dmxRecvState = DMX_RECV_IDLE; // initial state
+    setDMXState(DMX_RECV_IDLE); // initial state
     dmxLastPacket = millis(); // remember current (relative) time in msecs.
 
     // initialize the DMX buffer
