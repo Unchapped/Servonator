@@ -47,8 +47,8 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 #define DMX_RECV_BREAK 0x40
 #define DMX_RECV_DATA 0x80
 #define DMX_STATE_REG GPIOR1
-#define getDMXState DMX_STATE_REG
-#define setDMXState(STATE) DMX_STATE_REG = STATE
+#define getDMXState (DMX_STATE_REG & DMX_RECV_MASK)
+#define setDMXState(STATE) DMX_STATE_REG = (DMX_STATE_REG & ~DMX_RECV_MASK) | STATE
 
 #define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
 
@@ -64,9 +64,6 @@ bool dmxUpdated = true; // is set to true when new data arrived.
 // Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
 uint8_t dmxData[16]; //[DMXSERIAL_MAX + 1];
 uint16_t dmxCurrChannel; // This pointer will point to the next byte in dmxData;
-
-// uint8_t *dmxDataPtr; // This pointer will point to the next byte in dmxData;
-// uint8_t *dmxDataLastPtr; // This pointer will point to the last byte in dmxData;
 
 // This Interrupt Service Routine is called when a byte or frame error was received.
 ISR(USART_RX_vect)
