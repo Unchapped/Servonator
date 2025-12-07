@@ -69,15 +69,13 @@ uint8_t _dmxData[DMXSERIAL_MAX + 1];
 uint8_t *_dmxDataPtr; // This pointer will point to the next byte in _dmxData;
 uint8_t *_dmxDataLastPtr; // This pointer will point to the last byte in _dmxData;
 
-// In DMXReceiver mode when a byte or frame error was received
-ISR(USARTn_RX_vect)
-{
-  uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
-  uint8_t data = UDR0; // get data
 
+void _DMXReceived(uint8_t data, uint8_t frameerror)
+{
   uint8_t DmxState = _dmxRecvState; //just load once from SRAM to increase speed
-  if (DmxState == STARTUP) { //TODO: I think we can just remove this and start in IDLE
-    // just ignore any first frame coming in
+
+  if (DmxState == STARTUP) {
+    // just ignore any first frame comming in
     _dmxRecvState = IDLE;
     return;
   }
@@ -108,11 +106,27 @@ ISR(USARTn_RX_vect)
       *_dmxDataPtr = data;
     } // if
     _dmxDataPtr++;
-    if (_dmxDataPtr > _dmxDataLastPtr) _dmxRecvState = DONE; // all channels received.
+
+    if (_dmxDataPtr > _dmxDataLastPtr) {
+      // all channels received.
+      _dmxRecvState = IDLE; // wait for next break
+    } // if
   } // if
-  if (_dmxRecvState == DONE) _dmxRecvState = IDLE; // wait for next break
+} // _DMXReceived()
+
+// This Interrupt Service Routine is called when a byte or frame error was received.
+ISR(USARTn_RX_vect)
+{
+  uint8_t rxferr = (UCSR0A & (1 << FE0)); // get state before data!
+  uint8_t rxdata = UDR0; // get data
+  _DMXReceived(rxdata, rxferr);
 } // ISR(USARTn_RX_vect)
 
+// Interrupt service routines that are called when the actual byte was sent.
+ISR(USARTn_TX_vect) {} // ISR(USARTn_TX_vect)
+
+// this interrupt occurs after data register was emptied by handing it over to the shift register.
+ISR(USARTn_UDRE_vect) {} // ISR(USARTn_UDRE_vect)
 
 void setup() {
   //Initalize DMX Library
@@ -131,8 +145,8 @@ void setup() {
     UCSR0A = 0; // void _DMX_init()
     UBRR0H = _DMX_dmxPreScale >> 8;
     UBRR0L = _DMX_dmxPreScale;
-    UCSR0B = (1 << RXEN0) | (1 << RXCIE0);
     UCSR0C = DMXREADFORMAT; // accept data packets after first stop bit
+    UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
 
     //Flush the UART Hardware Buffer
     while (UCSR0A & (1 << RXC0)) uint8_t voiddata = UDR0;
