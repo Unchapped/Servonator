@@ -37,13 +37,12 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 
 
 // Using GPIOR0 for DMX channel counter (0-15 only)
+//lower 4 bits counter, Top 4 bits unused
 #define DMX_CHANNEL_REG GPIOR0
 #define DMX_CHANNEL_MASK  0x0F
 
-// Array of DMX values (raw).
-// Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
-uint8_t dmxData[16]; //[DMXSERIAL_MAX + 1];
-uint16_t dmxCurrChannel; // This pointer will point to the next byte in dmxData;
+// Array of DMX values (Only 16 channels, adjusted by offset)
+uint8_t dmxData[16];
 
 // Using GPIOR1 for DMX reciving State
 // Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG, DMX OFFSET(5 bits), ]
@@ -95,19 +94,28 @@ ISR(USART_RX_vect)
         break;
       }
       setDMXState(DMX_RECV_DATA);
-      dmxCurrChannel = 0;
+      DMX_CHANNEL_REG &= ~DMX_CHANNEL_MASK; //reset counter to zero
+      DMX_STATE_REG &= ~DMX_OFFSET_MASK; //reset offset to zero
       dmxLastPacket = millis();
       break;
-    case DMX_RECV_DATA:
-      // check for new data
-      if (dmxCurrChannel >= DMXSERIAL_MAX) { //all 512 bytes recieved
-        setDMXState(DMX_RECV_IDLE);
-        break;
-      }
-      if (dmxCurrChannel >= 16) break; //TODO: calculate and apply channels offset 
-      if(dmxData[dmxCurrChannel] != data) 
-        DMX_STATE_REG |= DMX_UPDATE_FLAG; //set DMX Update flag
-      dmxData[dmxCurrChannel++] = data;
+    case DMX_RECV_DATA: // check for new data
+      dmxData[DMX_CHANNEL_REG & DMX_CHANNEL_MASK] = data;
+      DMX_CHANNEL_REG++;
+      if (DMX_CHANNEL_REG & 0x10) //all 16 channels updated
+        DMX_STATE_REG = DMX_RECV_IDLE | DMX_UPDATE_FLAG; //set DMX Update flag and clear state and offset counter
+
+      // if ((DMX_STATE_REG & DMX_OFFSET_MASK) == 0) //TODO: calculate and apply channels offset 
+      //   dmxData[DMX_CHANNEL_REG & DMX_CHANNEL_MASK] = data;
+
+      // //increment channel counter and offset
+      // uint8_t next_channel = (DMX_CHANNEL_REG & DMX_CHANNEL_MASK) + 1;
+      // uint8_t next_offset = (DMX_STATE_REG & DMX_OFFSET_MASK) + ((next_channel & 0x10) >> 4);
+      // if(next_offset == 32) { //all 512 bytes recieved
+      //   DMX_STATE_REG = DMX_RECV_IDLE | DMX_UPDATE_FLAG; //set DMX Update flag and clear state and offset counter
+      //   break;
+      // }
+      // DMX_CHANNEL_REG = (DMX_CHANNEL_REG & ~DMX_CHANNEL_MASK) | (next_channel & DMX_CHANNEL_MASK);
+      // DMX_STATE_REG = (DMX_STATE_REG & ~DMX_OFFSET_MASK) | (next_offset & DMX_OFFSET_MASK);
       break;
     case DMX_RECV_IDLE:
     default:
@@ -119,8 +127,8 @@ void setup() {
   //Initalize DMX Library
   {
     // initialize global variables
-    dmxCurrChannel = 0;
-    setDMXState(DMX_RECV_IDLE); // initial state
+    DMX_CHANNEL_REG = 0;
+    DMX_STATE_REG = DMX_RECV_IDLE;
     dmxLastPacket = millis(); // remember current (relative) time in msecs.
 
     // initialize the DMX buffer
