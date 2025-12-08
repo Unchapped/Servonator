@@ -7,12 +7,13 @@
 
 //Pins D2-D7 5-pin DMX address offset (16 channel chunks)
 //Pin D7 - additional DIP switch channel (unused)
-#define PORTD_BITMASK B01111100
-uint16_t readdmx_offset(){
-  DDRD &= ~PORTD_BITMASK; //All inputs, we'll initialize the serial port later.
-  PORTD = PORTD_BITMASK; //enable pullups
-  return ((~PIND & PORTD_BITMASK) << 2); //read the setting
-  // PORTD &= ~PORTD_BITMASK; //MEH: disable pullups to save power
+#define PORTD_OFFSET_MASK B01111100
+#define PORTD_OFFSET_PINS ((~PIND & PORTD_OFFSET_MASK) << 2)
+
+//configure DMX Offset DIP switch pins
+inline void setup_offset_pins() {
+  DDRD &= ~PORTD_OFFSET_MASK; //All inputs, we'll initialize the serial port later.
+  PORTD = PORTD_OFFSET_MASK; //enable pullups
 }
 
 //Pin D11/PB3 - DMX LED
@@ -36,17 +37,18 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
 
-// Using GPIOR0 for DMX channel counter (0-15 only)
-//lower 4 bits counter, Top 4 bits unused
-#define DMX_CHANNEL_REG GPIOR0
-#define DMX_CHANNEL_MASK  0x0F
-
 // Array of DMX values (Only 16 channels, adjusted by offset)
 uint8_t dmxData[16];
 
+// Using GPIOR0 for DMX channel counter (0-255 only), overflow_bit in GPIOR1[0]
+#define DMX_CHANNEL_REG_L GPIOR0
+
 // Using GPIOR1 for DMX reciving State
-// Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG, DMX OFFSET(5 bits), ]
+// Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG, UNUSED(4 bits), DMX_CHANNEL_OVERFLOW_FLAG]1
 #define DMX_STATE_REG GPIOR1
+
+#define DMX_CHANNEL_OVF_FLAG  0x01
+#define DMX_CHANNEL_REG_H (DMX_STATE_REG & DMX_CHANNEL_OVF_FLAG) << 8
 
 //DMX Recieve State
 #define DMX_RECV_MASK  0xC0
@@ -58,7 +60,7 @@ uint8_t dmxData[16];
 
 #define DMX_UPDATE_FLAG 0x20
 
-#define DMX_OFFSET_MASK  0x1F
+
 
 
 // ----- DMXSerial Private variables -----
@@ -75,7 +77,30 @@ const int32_t dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for 
 
 volatile unsigned long dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
 
+// -----End DMXSerial Private variables -----
 
+
+inline void setup_dmx() {
+  //Initalize DMX Registers/Peripherals
+  DMX_CHANNEL_REG_L = 0;
+  DMX_STATE_REG = DMX_RECV_IDLE;
+  dmxLastPacket = millis(); // remember current (relative) time in msecs.
+
+  // initialize the DMX buffer
+  for (uint8_t n = 0; n < 16; n++)
+    dmxData[n] = 0;
+
+  //Setup UART hardware for recieving (Atmega328p UART0)
+  UCSR0A = 0; // void dmx_init()
+  UBRR0H = dmxPreScale >> 8;
+  UBRR0L = dmxPreScale;
+  UCSR0C = SERIAL_8N1; // accept data packets after first stop bit
+  UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
+
+  //Flush the UART Hardware Buffer
+  uint8_t voiddata;
+  while (UCSR0A & (1 << RXC0)) voiddata = UDR0; // get data  
+}
 
 
 // This Interrupt Service Routine is called when a byte or frame error was received.
@@ -94,28 +119,28 @@ ISR(USART_RX_vect)
         break;
       }
       setDMXState(DMX_RECV_DATA);
-      DMX_CHANNEL_REG &= ~DMX_CHANNEL_MASK; //reset counter to zero
-      DMX_STATE_REG &= ~DMX_OFFSET_MASK; //reset offset to zero
+      DMX_CHANNEL_REG_L = 0; //reset counter to zero
+      DMX_STATE_REG &= ~DMX_CHANNEL_OVF_FLAG; //clear overflow bit
       dmxLastPacket = millis();
       break;
     case DMX_RECV_DATA: // check for new data
-      dmxData[DMX_CHANNEL_REG & DMX_CHANNEL_MASK] = data;
-      DMX_CHANNEL_REG++;
-      if (DMX_CHANNEL_REG & 0x10) //all 16 channels updated
-        DMX_STATE_REG = DMX_RECV_IDLE | DMX_UPDATE_FLAG; //set DMX Update flag and clear state and offset counter
+      //read target channel offset
+      uint16_t target_offset = PORTD_OFFSET_PINS;
+      //unpack current offset
+      uint16_t current_offset = DMX_CHANNEL_REG_H | (DMX_CHANNEL_REG_L & 0xF0);
 
-      // if ((DMX_STATE_REG & DMX_OFFSET_MASK) == 0) //TODO: calculate and apply channels offset 
-      //   dmxData[DMX_CHANNEL_REG & DMX_CHANNEL_MASK] = data;
-
-      // //increment channel counter and offset
-      // uint8_t next_channel = (DMX_CHANNEL_REG & DMX_CHANNEL_MASK) + 1;
-      // uint8_t next_offset = (DMX_STATE_REG & DMX_OFFSET_MASK) + ((next_channel & 0x10) >> 4);
-      // if(next_offset == 32) { //all 512 bytes recieved
-      //   DMX_STATE_REG = DMX_RECV_IDLE | DMX_UPDATE_FLAG; //set DMX Update flag and clear state and offset counter
-      //   break;
-      // }
-      // DMX_CHANNEL_REG = (DMX_CHANNEL_REG & ~DMX_CHANNEL_MASK) | (next_channel & DMX_CHANNEL_MASK);
-      // DMX_STATE_REG = (DMX_STATE_REG & ~DMX_OFFSET_MASK) | (next_offset & DMX_OFFSET_MASK);
+      if(current_offset == target_offset) { //within the specified offset range
+        uint8_t channel = DMX_CHANNEL_REG_L & 0x0F;
+        dmxData[channel] = data;
+        if (channel == 0x0F) { //all 16 channels updated, don't bother reading any more data
+          DMX_STATE_REG = DMX_RECV_IDLE | DMX_UPDATE_FLAG; //set DMX Update flag and clear state and offset counter
+          break;
+        }
+      }
+      //increment and unpack counter
+      DMX_CHANNEL_REG_L++;
+      if(DMX_CHANNEL_REG_L == 0) //if 0, an overflow happened TODO: make this branchless?
+        DMX_STATE_REG |= DMX_CHANNEL_OVF_FLAG;
       break;
     case DMX_RECV_IDLE:
     default:
@@ -123,29 +148,10 @@ ISR(USART_RX_vect)
   } //state switch
 } // ISR(USARTn_RX_vect)
 
+
 void setup() {
-  //Initalize DMX Library
-  {
-    // initialize global variables
-    DMX_CHANNEL_REG = 0;
-    DMX_STATE_REG = DMX_RECV_IDLE;
-    dmxLastPacket = millis(); // remember current (relative) time in msecs.
-
-    // initialize the DMX buffer
-    for (int n = 0; n < 16; n++)
-      dmxData[n] = 0;
-
-    //Setup UART hardware for recieving (Atmega328p UART0)
-    UCSR0A = 0; // void dmx_init()
-    UBRR0H = dmxPreScale >> 8;
-    UBRR0L = dmxPreScale;
-    UCSR0C = SERIAL_8N1; // accept data packets after first stop bit
-    UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
-
-    //Flush the UART Hardware Buffer
-    uint8_t voiddata;
-    while (UCSR0A & (1 << RXC0)) voiddata = UDR0; // get data
-  }
+  setup_dmx();
+  setup_offset_pins();
 
   //Initialize Adafruit PWM
   pwm.begin();
@@ -163,7 +169,6 @@ void setup() {
 
 //DMX Mode loop function()
 void dmx_loop() {
-  uint16_t dmx_offset = readdmx_offset();
   unsigned long last_packet = millis() - dmxLastPacket; //DMXSerialClass::noDataSince()
 
   if(last_packet > 50) { //timeout
