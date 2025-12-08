@@ -47,53 +47,40 @@ uint8_t dmxData[16];
 // Bitflags 7[RECV_STATE_H, RECV_STATE_L, UPDATE_FLAG, UNUSED(4 bits), DMX_CHANNEL_OVERFLOW_FLAG]1
 #define DMX_STATE_REG GPIOR1
 
-#define DMX_CHANNEL_OVF_FLAG  0x01
-#define DMX_CHANNEL_REG_H (DMX_STATE_REG & DMX_CHANNEL_OVF_FLAG) << 8
-
 //DMX Recieve State
 #define DMX_RECV_MASK  0xC0
 #define DMX_RECV_IDLE 0x00
 #define DMX_RECV_BREAK 0x40
 #define DMX_RECV_DATA 0x80
-//#define getDMXState (DMX_STATE_REG & DMX_RECV_MASK)
 #define setDMXState(STATE) DMX_STATE_REG = (DMX_STATE_REG & ~DMX_RECV_MASK) | STATE
 
 #define DMX_UPDATE_FLAG 0x20
 
+#define DMX_CHANNEL_OVF_FLAG  0x01
 
+// https://ww1.microchip.com/downloads/en/DeviceDoc/Atmel-7810-Automotive-Microcontrollers-ATmega328P_Datasheet.pdf
+// ((F_CPU / 16) / baud) - 1 per table 19-1
+#define DMX_BAUD 250000L
+#define UartPrescale(B) (((((F_CPU) / 8) / (B)) - 1) / 2)
 
-
-// ----- DMXSerial Private variables -----
-// Copied from DMXSerial - A Arduino library for sending and receiving DMX using the builtin serial hardware port.
-// Copyright (c) 2011-2014 by Matthias Hertel, http://www.mathertel.de
-// This work is licensed under a BSD style license. See http://www.mathertel.de/License.aspx
-
-#define DMXSERIAL_MAX 512 ///< max. number of supported DMX data channels
-
-#define DMXSPEED 250000L
-// It implements rounding of ((clock / 16) / baud) - 1.
-#define CalcPreScale(B) (((((F_CPU) / 8) / (B)) - 1) / 2)
-const int32_t dmxPreScale = CalcPreScale(DMXSPEED); // BAUD prescale factor for DMX speed.
-
-volatile unsigned long dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
-
-// -----End DMXSerial Private variables -----
-
+uint32_t dmx_last_packet; //uint32 overflows every 49 days :shrug:
+#define DMX_TIMEOUT 50
 
 inline void setup_dmx() {
   //Initalize DMX Registers/Peripherals
   DMX_CHANNEL_REG_L = 0;
   DMX_STATE_REG = DMX_RECV_IDLE;
-  dmxLastPacket = millis(); // remember current (relative) time in msecs.
+  dmx_last_packet = millis(); // remember current (relative) time in msecs.
 
   // initialize the DMX buffer
   for (uint8_t n = 0; n < 16; n++)
     dmxData[n] = 0;
 
   //Setup UART hardware for recieving (Atmega328p UART0)
-  UCSR0A = 0; // void dmx_init()
-  UBRR0H = dmxPreScale >> 8;
-  UBRR0L = dmxPreScale;
+  UCSR0A = 0;
+  const int32_t pre_scale = UartPrescale(DMX_BAUD);
+  UBRR0H = pre_scale >> 8;
+  UBRR0L = pre_scale;
   UCSR0C = SERIAL_8N1; // accept data packets after first stop bit
   UCSR0B = (1 << RXEN0) | (1 << RXCIE0); //enable UART Reciever and Recieve interrupt
 
@@ -102,13 +89,11 @@ inline void setup_dmx() {
   while (UCSR0A & (1 << RXC0)) voiddata = UDR0; // get data  
 }
 
-
-// This Interrupt Service Routine is called when a byte or frame error was received.
 ISR(USART_RX_vect)
 {
-  uint8_t frameerror = (UCSR0A & (1 << FE0)); // get state before data!
+  uint8_t frame_error = (UCSR0A & (1 << FE0)); // get state before data!
   uint8_t data = UDR0; // get data
-  if (frameerror) { // break condition detected.
+  if (frame_error) {
     setDMXState(DMX_RECV_BREAK);
     return;
   }
@@ -121,13 +106,10 @@ ISR(USART_RX_vect)
       setDMXState(DMX_RECV_DATA);
       DMX_CHANNEL_REG_L = 0; //reset counter to zero
       DMX_STATE_REG &= ~DMX_CHANNEL_OVF_FLAG; //clear overflow bit
-      dmxLastPacket = millis();
       break;
-    case DMX_RECV_DATA: // check for new data
-      //read target channel offset
+    case DMX_RECV_DATA:
       uint16_t target_offset = PORTD_OFFSET_PINS;
-      //unpack current offset
-      uint16_t current_offset = DMX_CHANNEL_REG_H | (DMX_CHANNEL_REG_L & 0xF0);
+      uint16_t current_offset = ((DMX_STATE_REG & DMX_CHANNEL_OVF_FLAG) << 8) | (DMX_CHANNEL_REG_L & 0xF0);
 
       if(current_offset == target_offset) { //within the specified offset range
         uint8_t channel = DMX_CHANNEL_REG_L & 0x0F;
@@ -137,16 +119,14 @@ ISR(USART_RX_vect)
           break;
         }
       }
-      //increment and unpack counter
       DMX_CHANNEL_REG_L++;
-      if(DMX_CHANNEL_REG_L == 0) //if 0, an overflow happened TODO: make this branchless?
-        DMX_STATE_REG |= DMX_CHANNEL_OVF_FLAG;
+      DMX_STATE_REG |= (DMX_CHANNEL_OVF_FLAG & (DMX_CHANNEL_REG_L == 0)); //An overflow happened
       break;
     case DMX_RECV_IDLE:
     default:
       break;
-  } //state switch
-} // ISR(USARTn_RX_vect)
+  }
+}
 
 
 void setup() {
@@ -169,19 +149,17 @@ void setup() {
 
 //DMX Mode loop function()
 void dmx_loop() {
-  unsigned long last_packet = millis() - dmxLastPacket; //DMXSerialClass::noDataSince()
-
-  if(last_packet > 50) { //timeout
-    digitalWrite(DMX_LED, (last_packet >> 7) & 1); //128ms blink period ~=10 Hz
-    return;
-  }
-
-  digitalWrite(DMX_LED, HIGH);
+  uint32_t last_packet = (uint32_t) millis() - dmx_last_packet;
   if(DMX_STATE_REG & DMX_UPDATE_FLAG) {
+    digitalWrite(DMX_LED, HIGH);
     for(int channel = 0; channel < 16; channel++) {
         pwm.setPWM(channel, 0, map(dmxData[channel], 0, 255, SERVOMIN, SERVOMAX));
       }
+    dmx_last_packet = millis();
     DMX_STATE_REG &= ~DMX_UPDATE_FLAG; //clear DMX Update Flag
+  } else if(last_packet > DMX_TIMEOUT) { //timeout
+    digitalWrite(DMX_LED, (last_packet >> 7) & 1); //128ms blink period ~=10 Hz
+    return;
   }
 }
 
