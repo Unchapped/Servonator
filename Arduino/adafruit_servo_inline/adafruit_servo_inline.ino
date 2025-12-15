@@ -9,14 +9,16 @@ Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 // have!
 #define SERVOMIN  120 // This is the 'minimum' pulse length count (out of 4096)
 #define SERVOMAX  460 // This is the 'maximum' pulse length count (out of 4096)
-#define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
+// #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 
 
 // Default PCA9685 I2C Slave Address
 #define PCA9685_I2C_ADDRESS 0x40
-#define PCA9685_OSC 25000000
+// #define PCA9685_OSC 25000000
 
-/******************* Low level I2C interface */
+// uint8_t prescale = ((PCA9685_OSC / (SERVO_FREQ * 4096.0)) + 0.5) - 1; = 121
+#define SERVO_PRESCALE 121
+
 uint8_t _read8(uint8_t addr) {
   Wire.beginTransmission(PCA9685_I2C_ADDRESS);
   Wire.write(addr);
@@ -37,13 +39,14 @@ void inline _beginPWM() {
   Wire.begin();
   //void reset();
   {
-    _write8(PCA9685_MODE1, MODE1_RESTART);
-    delay(10);
+    // _write8(PCA9685_MODE1, MODE1_RESTART);
+    // delay(10);
   }
-
-  //pretty sure these were swapped unnecessarily in the Adafruit library
-  pwm.setOscillatorFrequency(PCA9685_OSC);
-  pwm.setPWMFreq(SERVO_FREQ);
+  {
+    _write8(PCA9685_MODE1, MODE1_SLEEP); // go to sleep
+    _write8(PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
+    _write8(PCA9685_MODE1, MODE1_RESTART | MODE1_AI); // Wake up
+  }
 }
 
 uint8_t inline _setPWM(uint8_t num, uint16_t on, uint16_t off) {
