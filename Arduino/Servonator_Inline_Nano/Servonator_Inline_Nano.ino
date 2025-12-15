@@ -161,7 +161,7 @@ ISR(USART_RX_vect)
 
 
 #define PCA9685_MODE1 0x00      /**< Mode Register 1 */
-// #define MODE1_ALLCAL 0x01  /**< respond to LED All Call I2C-bus address */
+// #define MODE1_ALLCALL 0x01  /**< respond to LED All Call I2C-bus address */
 // #define MODE1_SUB3 0x02    /**< respond to I2C-bus subaddress 3 */
 // #define MODE1_SUB2 0x04    /**< respond to I2C-bus subaddress 2 */
 // #define MODE1_SUB1 0x08    /**< respond to I2C-bus subaddress 1 */
@@ -169,6 +169,11 @@ ISR(USART_RX_vect)
 #define MODE1_AI 0x20      /**< Auto-Increment enabled */
 // #define MODE1_EXTCLK 0x40  /**< Use EXTCLK pin clock */
 #define MODE1_RESTART 0x80 /**< Restart enabled */
+
+// PCA9685 Datasheet Default
+// #define MODE1_DEFAULT (MODE1_SLEEP | MODE1_ALLCALL)
+//My custom Default (remove Allcall), configure autoIncrement, same as the Adafruit Lib
+#define MODE1_INIT (MODE1_SLEEP | MODE1_AI)
 
 // #define PCA9685_MODE2 0x01      /**< Mode Register 2 */
 // #define MODE2_OUTNE_0 0x01 /**< Active LOW output enable input */
@@ -215,33 +220,19 @@ uint8_t pwm_setPWM(uint8_t num, uint16_t on, uint16_t off) {
   return Wire.endTransmission();
 }
 
+//Initialize Adafruit PWM Servo board
 inline void setup_pwm() {
-  //Initialize Adafruit PWM
-  //pwm.begin();
-  {
-    Wire.begin();
-
-    //MODE1 Default Value starts up in sleep mode, and will respond to all call addresses
-    //reset(); //NATE: Assuming we're starting from power-off, I don't think we need this...
-    {
-      pwm_write8(PCA9685_MODE1, MODE1_RESTART);
-      delay(10); //wait for restart (should only be 500 us)
-    }
-    //pwm.setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
-    {
-        uint8_t oldmode = pwm_read8(PCA9685_MODE1); //Don't know this is needed
-        // uint8_t newmode = (oldmode & ~MODE1_RESTART) | MODE1_SLEEP; // sleep //this should be the default state
-        // write8(PCA9685_MODE1, newmode);                             // go to sleep
-        pwm_write8(PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
-        pwm_write8(PCA9685_MODE1, oldmode);
-        delay(5);
-        // This sets the MODE1 register to turn on auto increment.
-        pwm_write8(PCA9685_MODE1, oldmode | MODE1_RESTART | MODE1_AI);
-    }
-
-
-  //}
-  }
+  Wire.begin();
+  uint8_t oldmode = pwm_read8(PCA9685_MODE1);
+  pwm_write8(PCA9685_MODE1, (oldmode & ~MODE1_RESTART) | MODE1_SLEEP); // go to sleep
+  //NATE BROKEN: pwm_write8(PCA9685_MODE1, MODE1_INIT);
+  pwm_write8(PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
+  pwm_write8(PCA9685_MODE1, oldmode);
+  delay(5); //TODO: wait for I2C bus to empty instead of dumb delay!
+  // "Restart", but I don't think restart does what Adafruit thinks it does, probably don't need this
+  //NATE BROKEN: pwm_write8(PCA9685_MODE1, MODE1_INIT | MODE1_RESTART); 
+  // This sets the MODE1 register to turn on auto increment.
+  pwm_write8(PCA9685_MODE1, oldmode | MODE1_RESTART | MODE1_AI);
 }
 
 //End Adafruit lib copy/refines
