@@ -37,16 +37,9 @@ void _write8(uint8_t addr, uint8_t d) {
 
 void inline _beginPWM() {
   Wire.begin();
-  //void reset();
-  {
-    // _write8(PCA9685_MODE1, MODE1_RESTART);
-    // delay(10);
-  }
-  {
-    _write8(PCA9685_MODE1, MODE1_SLEEP); // go to sleep
-    _write8(PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
-    _write8(PCA9685_MODE1, MODE1_RESTART | MODE1_AI); // Wake up
-  }
+  // _write8(PCA9685_MODE1, MODE1_SLEEP); // go to sleep
+  _write8(PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
+  _write8(PCA9685_MODE1, MODE1_RESTART | MODE1_AI); // Wake up
 }
 
 uint8_t inline _setPWM(uint8_t num, uint16_t on, uint16_t off) {
