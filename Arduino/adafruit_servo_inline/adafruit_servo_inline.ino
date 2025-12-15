@@ -1,4 +1,5 @@
-#include <Wire.h>
+// #include <Wire.h>
+#include <I2C.h>
 
 //Necessary PWM Defines
 #define PCA9685_I2C_ADDRESS 0x40
@@ -17,28 +18,30 @@
 #define SERVOMIN  120 // This is the 'minimum' pulse length count (out of 4096)
 #define SERVOMAX  460 // This is the 'maximum' pulse length count (out of 4096)
 
-void _write8(uint8_t addr, uint8_t d) {
-  Wire.beginTransmission(PCA9685_I2C_ADDRESS);
-  Wire.write(addr);
-  Wire.write(d);
-  Wire.endTransmission();
-}
+// void _write8(uint8_t addr, uint8_t d) {
+//   Wire.beginTransmission(PCA9685_I2C_ADDRESS);
+//   Wire.write(addr);
+//   Wire.write(d);
+//   Wire.endTransmission();
+// }
 
 void inline _beginPWM() {
-  Wire.begin();
+  I2c.begin();
   // _write8(PCA9685_MODE1, MODE1_SLEEP); // go to sleep
-  _write8(PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
-  _write8(PCA9685_MODE1, MODE1_RESTART | MODE1_AI); // Wake up
+  I2c.write(PCA9685_I2C_ADDRESS, PCA9685_PRESCALE, SERVO_PRESCALE); // set the prescaler
+  I2c.write(PCA9685_I2C_ADDRESS, PCA9685_MODE1, MODE1_RESTART | MODE1_AI); // Wake up
 }
 
 uint8_t inline _setPWM(uint8_t num, uint16_t on, uint16_t off) {
-  Wire.beginTransmission(PCA9685_I2C_ADDRESS);
-  Wire.write(PCA9685_LED0_ON_L + 4 * num);
-  Wire.write(on);
-  Wire.write(on >> 8);
-  Wire.write(off);
-  Wire.write(off >> 8);
-  return Wire.endTransmission();
+  uint8_t data[] = {on, (on >> 8), off, (off >> 8)};
+  return I2c.write(PCA9685_I2C_ADDRESS, PCA9685_LED0_ON_L + 4 * num, data);
+  // Wire.beginTransmission(PCA9685_I2C_ADDRESS);
+  // Wire.write(PCA9685_LED0_ON_L + 4 * num);
+  // Wire.write(on);
+  // Wire.write(on >> 8);
+  // Wire.write(off);
+  // Wire.write(off >> 8);
+  // return Wire.endTransmission();
 }
 
 
