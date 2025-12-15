@@ -1,32 +1,21 @@
 #include <Wire.h>
-#include <Adafruit_PWMServoDriver.h>
 
-Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
-
-// Depending on your servo make, the pulse width min and max may vary, you 
-// want these to be as small/large as possible without hitting the hard stop
-// for max range. You'll have to tweak them as necessary to match the servos you
-// have!
-#define SERVOMIN  120 // This is the 'minimum' pulse length count (out of 4096)
-#define SERVOMAX  460 // This is the 'maximum' pulse length count (out of 4096)
-// #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
-
-
-// Default PCA9685 I2C Slave Address
+//Necessary PWM Defines
 #define PCA9685_I2C_ADDRESS 0x40
-// #define PCA9685_OSC 25000000
+#define PCA9685_MODE1 0x00
+#define MODE1_SLEEP 0x10   /**< Low power mode. Oscillator off */
+#define MODE1_AI 0x20      /**< Auto-Increment enabled */
+#define MODE1_RESTART 0x80 /**< Restart enabled */
+#define PCA9685_LED0_ON_L 0x06
+#define PCA9685_PRESCALE 0xFE
 
+// #define PCA9685_OSC 25000000
+// #define SERVO_FREQ 50 // Analog servos run at ~50 Hz updates
 // uint8_t prescale = ((PCA9685_OSC / (SERVO_FREQ * 4096.0)) + 0.5) - 1; = 121
 #define SERVO_PRESCALE 121
 
-uint8_t _read8(uint8_t addr) {
-  Wire.beginTransmission(PCA9685_I2C_ADDRESS);
-  Wire.write(addr);
-  Wire.endTransmission();
-
-  Wire.requestFrom(PCA9685_I2C_ADDRESS, (uint8_t)1);
-  return Wire.read();
-}
+#define SERVOMIN  120 // This is the 'minimum' pulse length count (out of 4096)
+#define SERVOMAX  460 // This is the 'maximum' pulse length count (out of 4096)
 
 void _write8(uint8_t addr, uint8_t d) {
   Wire.beginTransmission(PCA9685_I2C_ADDRESS);
