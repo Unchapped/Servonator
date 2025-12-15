@@ -43,23 +43,14 @@ uint8_t inline _setPWM(uint8_t num, uint16_t on, uint16_t off) {
 
 
 void setup() {
-  Serial.begin(9600);
-  Serial.println("8 channel Servo test!");
-
   _beginPWM();
-  //pwm.begin();
-  //pwm.setOscillatorFrequency(25000000); //THIS IS WHERE THE FUCKING BUG CAME FROM!
-  //pwm.setPWMFreq(SERVO_FREQ);  // Analog servos run at ~50 Hz updates
-
-  delay(10);
 }
 
 
-
-uint16_t pulselen = SERVOMIN;
-int16_t dir = 1;
-
 void loop() {
+  static uint16_t pulselen = SERVOMIN;
+  static int16_t dir = 1;
+
   if (pulselen == SERVOMIN) dir = 1;
   if (pulselen == SERVOMAX) dir = -1;
   pulselen += dir;
